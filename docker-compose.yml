@@ -1,0 +1,129 @@
+services:
+  hermes:
+    build:
+      context: .
+      args:
+        # Feel free to override these in your own compose.override.yml
+        HERMES_REPO: https://github.com/NousResearch/hermes-agent.git
+        HERMES_BRANCH: main
+    image: hermes-gateway:latest
+    container_name: hermes-gateway
+    entrypoint:
+      - sh
+      - -lc
+    depends_on:
+      nemotron:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      HERMES_HOME: /app/.hermes
+      API_SERVER_ENABLED: "true"
+      API_SERVER_HOST: 0.0.0.0
+      API_SERVER_PORT: ${HERMES_GATEWAY_PORT:-8000}
+      API_SERVER_KEY: ${HERMES_API_KEY}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command:
+      - |
+        mkdir -p /app/.hermes
+        envsubst < /app/config.template.yaml > /app/.hermes/config.yaml
+        exec hermes gateway
+    ports:
+      - "${HERMES_GATEWAY_PORT:-8000}:${HERMES_GATEWAY_PORT:-8000}"
+    volumes:
+      # Persistent Hermes runtime state for this project
+      - ./data/hermes/home:/app/.hermes
+      # Template for the generated Hermes runtime config
+      - ./settings/hermes/config.yaml:/app/config.template.yaml:ro
+      # Project-local SSH material for host command execution
+      - ./secrets/ssh:/root/.ssh:ro
+      # Optional: forward your SSH agent socket when SSH_AUTH_SOCK is set
+      # - ${SSH_AUTH_SOCK}:/ssh-agent.socket
+    # environment:
+    #   SSH_AUTH_SOCK: /ssh-agent.socket
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >
+          python -c "import os, sys, urllib.request;
+          url = 'http://127.0.0.1:%s/health' % os.environ.get('HERMES_GATEWAY_PORT', '8000');
+          sys.exit(0 if urllib.request.urlopen(url, timeout=5).status == 200 else 1)"
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: open-webui
+    depends_on:
+      hermes:
+        condition: service_healthy
+    environment:
+      OPENAI_API_BASE_URL: http://hermes:${HERMES_GATEWAY_PORT:-8000}/v1
+      OPENAI_API_KEY: ${HERMES_API_KEY}
+    ports:
+      - "${OPEN_WEBUI_PORT:-3000}:8080"
+    volumes:
+      - ./data/open-webui:/app/backend/data
+    restart: unless-stopped
+
+  nemotron:
+    build:
+      context: ./vendor/nemotron-build
+      dockerfile: Dockerfile
+    image: vllm-node:latest
+    container_name: vllm-nemotron-super
+    command:
+      - bash
+      - -lc
+      - >
+        vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+        --kv-cache-dtype fp8
+        --moe-backend marlin
+        --trust-remote-code
+        --gpu-memory-utilization ${NEMOTRON_GPU_MEMORY_UTILIZATION:-0.9}
+        --max-model-len ${NEMOTRON_MAX_MODEL_LEN:-262144}
+        --max-num-seqs ${NEMOTRON_MAX_NUM_SEQS:-4}
+        --enable-prefix-caching
+        --host 0.0.0.0
+        --port ${NEMOTRON_PORT:-9000}
+        --async-scheduling
+        --enable-auto-tool-choice
+        --load-format fastsafetensors
+        --tool-call-parser qwen3_coder
+        --reasoning-parser nemotron_v3
+        --mamba_ssm_cache_dtype float32
+        --tensor-parallel-size ${NEMOTRON_TENSOR_PARALLEL_SIZE:-1}
+        --attention-backend TRITON_ATTN
+        --quantization fp4
+    environment:
+      HF_HOME: /var/cache/huggingface
+      PYTHONUNBUFFERED: "1"
+      VLLM_FLASHINFER_ALLREDUCE_BACKEND: trtllm
+      VLLM_NVFP4_GEMM_BACKEND: marlin
+      VLLM_USE_FLASHINFER_MOE_FP4: "0"
+      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+    volumes:
+      - ./data/nemotron/huggingface:/var/cache/huggingface
+      - ./data/nemotron/vllm:/root/.cache/vllm
+      - ./data/nemotron/flashinfer:/root/.cache/flashinfer
+      - ./data/nemotron/triton:/root/.triton
+      - ./data/nemotron/tmp:/tmp
+      - ./settings/nemotron/mods/nemotron-super:/opt/nemotron-super-fix
+    ports:
+      - "${NEMOTRON_PORT:-9000}:${NEMOTRON_PORT:-9000}"
+    restart: unless-stopped
+    gpus: all
+    shm_size: 16gb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${NEMOTRON_PORT:-9000}/v1/models >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 20
+      start_period: 300s
+    ulimits:
+      memlock: -1
+      stack: 67108864

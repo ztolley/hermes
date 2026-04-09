@@ -1,0 +1,15 @@
+model:
+  default: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+  provider: custom
+  base_url: http://nemotron:${NEMOTRON_PORT}/v1
+
+terminal:
+  backend: ssh
+  cwd: ${HERMES_HOST_SSH_CWD}
+  timeout: 180
+  lifetime_seconds: 300
+  persistent_shell: true
+  ssh_host: host.docker.internal
+  ssh_user: ${HERMES_HOST_SSH_USER}
+  ssh_port: ${HERMES_HOST_SSH_PORT}
+  ssh_key: /root/.ssh/id_rsa

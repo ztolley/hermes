@@ -1,0 +1,26 @@
+# Environment files with secrets
+.env
+.env.local
+.envrc
+
+# Persistent runtime state
+/data/
+
+# Local SSH material for the Hermes container
+/secrets/ssh/*
+!/secrets/ssh/README.md
+
+# Local Docker Compose overrides
+/compose.override.yml
+/docker-compose.override.yml
+
+# IDE / OS artefacts
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Editor swap / backup files
+*.swp
+*.swo
+*~

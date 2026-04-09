@@ -1,0 +1,6 @@
+# Hermes builds entirely from the Dockerfile and upstream GitHub clone.
+# Keep the build context tiny and avoid sending local runtime state or secrets
+# to the daemon.
+**
+!Dockerfile
+!.dockerignore
