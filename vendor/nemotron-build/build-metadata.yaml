@@ -1,0 +1,13 @@
+build_date: unknown
+build_script_commit: unknown
+vllm_version: unknown
+vllm_commit: unknown
+flashinfer_commit: unknown
+gpu_arch: unknown
+base_image: unknown
+build_args:
+  vllm_ref: ""
+  transformers_5: ""
+  exp_mxfp4: ""
+  vllm_prs: ""
+  build_jobs: ""

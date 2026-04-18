@@ -1,0 +1,8 @@
+# Keep the Nemotron build context limited to the files its Dockerfile
+# actually consumes from this vendored directory.
+**
+!Dockerfile
+!.dockerignore
+!build-metadata.yaml
+!flashinfer_cache.patch
+!vllm_sm12x_runtime.patch
