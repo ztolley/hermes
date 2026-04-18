@@ -91,22 +91,29 @@ ARG CACHEBUST_FLASHINFER=1
 # Smart Git Clone (Fetch changes instead of full re-clone)
 RUN --mount=type=cache,id=repo-cache,target=/repo-cache \
     cd /repo-cache && \
-    if [ ! -d "flashinfer" ]; then \
-        echo "Cache miss: Cloning FlashInfer from scratch..." && \
-        git clone --recursive https://github.com/flashinfer-ai/flashinfer.git; \
-        if [ "$FLASHINFER_REF" != "main" ]; then \
-            cd flashinfer && \
-            git checkout ${FLASHINFER_REF}; \
-        fi; \
-    else \
+    if [ -d "flashinfer/.git" ]; then \
         echo "Cache hit: Fetching flashinfer updates..." && \
         cd flashinfer && \
-        git fetch origin && \
-        git fetch origin --tags --force && \
-        (git checkout --detach origin/${FLASHINFER_REF} 2>/dev/null || git checkout ${FLASHINFER_REF}) && \
-        git submodule update --init --recursive && \
-        git clean -fdx && \
-        git gc --auto; \
+        if ! (git fetch origin && \
+              git fetch origin --tags --force && \
+              (git checkout --detach origin/${FLASHINFER_REF} 2>/dev/null || git checkout ${FLASHINFER_REF}) && \
+              git submodule sync --recursive && \
+              git submodule update --init --recursive && \
+              git clean -fdx && \
+              git gc --auto); then \
+            echo "FlashInfer repo cache is stale, recloning..." && \
+            cd /repo-cache && \
+            rm -rf flashinfer; \
+        fi; \
+    fi && \
+    if [ ! -d "flashinfer/.git" ]; then \
+        echo "Cloning FlashInfer from scratch..." && \
+        git clone --recursive https://github.com/flashinfer-ai/flashinfer.git && \
+        cd flashinfer && \
+        if [ "$FLASHINFER_REF" != "main" ]; then \
+            git checkout ${FLASHINFER_REF}; \
+            git submodule update --init --recursive; \
+        fi; \
     fi && \
     cp -a /repo-cache/flashinfer /workspace/flashinfer
 
@@ -204,15 +211,18 @@ RUN if [ -n "$VLLM_PRS" ]; then \
         done; \
     fi
 
-# TEMPORARY PATCH for broken FP8 kernels - https://github.com/vllm-project/vllm/pull/35568
-RUN curl -fsL https://patch-diff.githubusercontent.com/raw/vllm-project/vllm/pull/35568.diff -o pr35568.diff \
-    && if git apply --reverse --check pr35568.diff 2>/dev/null; then \
-         echo "PR 35568 already applied, skipping."; \
-       else \
-         echo "Applying PR 35568..."; \
-         git apply -v pr35568.diff; \
-       fi \
-    && rm pr35568.diff
+# TEMPORARY PATCH for broken FP8 kernels on SM12x while upstream main drifts.
+COPY vllm_sm12x_runtime.patch .
+RUN if git apply --reverse --check vllm_sm12x_runtime.patch 2>/dev/null; then \
+        echo "SM12x runtime patch already applied, skipping."; \
+    elif git apply --check vllm_sm12x_runtime.patch; then \
+        echo "Applying local SM12x runtime patch..."; \
+        git apply -v vllm_sm12x_runtime.patch; \
+    else \
+        echo "SM12x runtime patch no longer applies cleanly against VLLM_REF=${VLLM_REF}."; \
+        exit 1; \
+    fi \
+    && rm vllm_sm12x_runtime.patch
 
 # TEMPORARY PATCH for broken compilation - https://github.com/vllm-project/vllm/pull/38919
 RUN curl -fsL https://patch-diff.githubusercontent.com/raw/vllm-project/vllm/pull/38919.diff -o pr38919.diff \
@@ -228,9 +238,7 @@ RUN curl -fsL https://patch-diff.githubusercontent.com/raw/vllm-project/vllm/pul
 RUN --mount=type=cache,id=uv-cache,target=/root/.cache/uv \
     python3 use_existing_torch.py && \
     sed -i "/flashinfer/d" requirements/cuda.txt && \
-    sed -i '/^triton\b/d' requirements/test.txt && \
-    sed -i '/^fastsafetensors\b/d' requirements/test.txt && \
-    uv pip install -r requirements/build.txt
+    uv pip install -r requirements/build/cuda.txt
 
 # Apply Patches
 # TEMPORARY PATCH for fastsafetensors loading in cluster setup - tracking https://github.com/vllm-project/vllm/issues/34180

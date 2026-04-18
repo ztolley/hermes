@@ -5,3 +5,4 @@
 !.dockerignore
 !build-metadata.yaml
 !flashinfer_cache.patch
+!vllm_sm12x_runtime.patch
