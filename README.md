@@ -21,8 +21,9 @@ Safe for public GitHub:
 - Enables Hermes's built-in OpenAI-compatible API server inside the gateway
   container.
 - Runs Open WebUI against that Hermes API so you get a browser chat interface.
-- Runs Nemotron 3 Super through NVIDIA's TensorRT-LLM runtime using the DGX
-  Spark settings NVIDIA publishes for this model.
+- Runs Nemotron 3 Super through NVIDIA's TensorRT-LLM runtime using a DGX
+  Spark profile that has been validated alongside a second local model
+  service.
 - Persists all runtime state under `./data`.
 - Keeps user-editable config under `./settings`.
 - Keeps host-SSH material under `./secrets/ssh`.
@@ -33,8 +34,6 @@ Safe for public GitHub:
   Main stack definition.
 - `Dockerfile`
   Hermes image build.
-- `vendor/nemotron-build/`
-  Legacy self-contained vLLM / Nemotron build context kept as a fallback.
 - `settings/hermes/config.yaml`
   Hermes config template rendered at container startup.
 - `settings/nemotron/`
@@ -46,7 +45,7 @@ Safe for public GitHub:
 - `data/open-webui/`
   Persistent Open WebUI state, including its first-launch connection settings.
 - `data/nemotron/`
-  Persistent Hugging Face, vLLM, FlashInfer, Triton, and temp caches.
+  Persistent Hugging Face, TensorRT-LLM, and temp caches.
 
 ## Prerequisites
 
@@ -87,9 +86,9 @@ At minimum this folder should contain:
 - `OPEN_WEBUI_PORT=3000`
 - `NEMOTRON_PORT=9000`
 - `HERMES_API_KEY=...`
-- `NEMOTRON_GPU_MEMORY_UTILIZATION=0.9`
-- `NEMOTRON_MAX_MODEL_LEN=1048576`
-- `NEMOTRON_MAX_NUM_SEQS=8`
+- `NEMOTRON_GPU_MEMORY_UTILIZATION=0.75`
+- `NEMOTRON_MAX_MODEL_LEN=131072`
+- `NEMOTRON_MAX_NUM_SEQS=4`
 - `NEMOTRON_MAX_NUM_TOKENS=8192`
 
 5. Start the stack:
@@ -149,17 +148,19 @@ Important:
 
 - Nemotron runs TensorRT-LLM and exposes an OpenAI-compatible API on
   `http://localhost:9000/v1` by default.
+- Hermes does not need any special TensorRT integration because it already
+  talks to the model server over that OpenAI-compatible API at
+  `http://nemotron:${NEMOTRON_PORT}/v1`.
 - Runtime caches are persisted under `./data/nemotron/`.
 - Change the port by editing `NEMOTRON_PORT` in `.env`.
-- This stack follows NVIDIA's DGX Spark guidance for Nemotron 3 Super:
-  `NEMOTRON_GPU_MEMORY_UTILIZATION=0.9`,
-  `NEMOTRON_MAX_MODEL_LEN=1048576`,
-  `NEMOTRON_MAX_NUM_SEQS=8`, and
+- The repo defaults are the validated coexistence profile for DGX Spark:
+  `NEMOTRON_GPU_MEMORY_UTILIZATION=0.75`,
+  `NEMOTRON_MAX_MODEL_LEN=131072`,
+  `NEMOTRON_MAX_NUM_SEQS=4`, and
   `NEMOTRON_MAX_NUM_TOKENS=8192`.
-- Compared with the earlier vLLM defaults in this repo, the TensorRT-LLM
-  profile is more aggressive on memory use, increases the default context from
-  131072 to 1048576 tokens, and uses FP16 Mamba cache with stochastic rounding
-  to make that fit on a single DGX Spark.
+- NVIDIA's larger single-model Spark profile is still possible, but it is more
+  aggressive on memory use and was not the profile validated here because this
+  machine also keeps a Qwen autocomplete service resident.
 
 ## Build And Run
 
@@ -305,13 +306,13 @@ have everything live alongside it".
 
 ## Notes On Nemotron Runtime
 
-- `nemotron` now uses NVIDIA's prebuilt TensorRT-LLM container instead of a
-  local source build.
+- `nemotron` uses NVIDIA's prebuilt TensorRT-LLM container.
 - The first start can still take a while because the model weights must be
-  downloaded and the runtime may build/cache kernels for the local Spark.
-- The legacy vLLM source-build path is still in
-  [`./vendor/nemotron-build/README.md`](./vendor/nemotron-build/README.md) if
-  you ever need to revert.
+  downloaded and the runtime performs model init, autotuning, and CUDA graph
+  warmup on the local Spark.
+- On the validated coexistence profile, Nemotron reached healthy on the Spark
+  in about 8 minutes while a separate Qwen autocomplete container remained
+  running.
 
 ## Public Repo Checklist
 
@@ -341,10 +342,10 @@ If logs mention insufficient free memory, either:
 - lower `NEMOTRON_MAX_MODEL_LEN` in `.env`
 
 On busy machines, the failure can happen even when the GPU is large enough in
-total because the TensorRT-LLM profile is configured for a large 1M-token
-context window and a high free-memory fraction by default. The repo now follows
-NVIDIA's more aggressive Spark profile, so reducing either knob is the first
-thing to try if you want more headroom for host-side work.
+total because TensorRT-LLM still performs a heavy initialization pass before it
+becomes healthy. The repo defaults are already reduced for coexistence; if you
+raise them later toward NVIDIA's larger single-model Spark profile, reducing
+those two knobs is the first thing to try.
 
 ### Hermes is up but Telegram conflicts
 
