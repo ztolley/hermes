@@ -3,7 +3,7 @@
 Self-contained Docker Compose stack for running:
 - `hermes` as the gateway / agent container with its built-in API server enabled
 - `open-webui` as a browser UI for Hermes
-- `nemotron` as a local vLLM OpenAI-compatible model server
+- `nemotron` as a local TensorRT-LLM OpenAI-compatible model server
 
 The repo is laid out so someone can check it out, read this file, set a few
 environment values, and run the stack without depending on files outside the
@@ -21,8 +21,8 @@ Safe for public GitHub:
 - Enables Hermes's built-in OpenAI-compatible API server inside the gateway
   container.
 - Runs Open WebUI against that Hermes API so you get a browser chat interface.
-- Builds a Nemotron-capable vLLM image from source inside
-  `./vendor/nemotron-build`.
+- Runs Nemotron 3 Super through NVIDIA's TensorRT-LLM runtime using the DGX
+  Spark settings NVIDIA publishes for this model.
 - Persists all runtime state under `./data`.
 - Keeps user-editable config under `./settings`.
 - Keeps host-SSH material under `./secrets/ssh`.
@@ -34,11 +34,11 @@ Safe for public GitHub:
 - `Dockerfile`
   Hermes image build.
 - `vendor/nemotron-build/`
-  Self-contained vLLM / Nemotron build context.
+  Legacy self-contained vLLM / Nemotron build context kept as a fallback.
 - `settings/hermes/config.yaml`
   Hermes config template rendered at container startup.
-- `settings/nemotron/mods/`
-  Placeholder directory for Nemotron-specific runtime mods if needed later.
+- `settings/nemotron/`
+  TensorRT-LLM config template and Nemotron-specific runtime assets.
 - `secrets/ssh/`
   SSH files used by Hermes to run commands on the host.
 - `data/hermes/`
@@ -55,8 +55,8 @@ Safe for public GitHub:
 - A DGX Spark or another compatible GPU host for the Nemotron runtime
 - `sshd` running on the host if you want Hermes to execute commands on that host
 - Network access during build
-  Hermes is cloned from GitHub and the Nemotron image fetches upstream source
-  code and packages during the build.
+  Hermes is cloned from GitHub and the Nemotron container downloads model
+  weights on first start.
 
 ## First-Time Setup
 
@@ -87,9 +87,10 @@ At minimum this folder should contain:
 - `OPEN_WEBUI_PORT=3000`
 - `NEMOTRON_PORT=9000`
 - `HERMES_API_KEY=...`
-- `NEMOTRON_GPU_MEMORY_UTILIZATION=0.75`
-- `NEMOTRON_MAX_MODEL_LEN=131072`
-- `NEMOTRON_MAX_NUM_SEQS=4`
+- `NEMOTRON_GPU_MEMORY_UTILIZATION=0.9`
+- `NEMOTRON_MAX_MODEL_LEN=1048576`
+- `NEMOTRON_MAX_NUM_SEQS=8`
+- `NEMOTRON_MAX_NUM_TOKENS=8192`
 
 5. Start the stack:
 
@@ -146,13 +147,19 @@ Important:
 
 ### Nemotron
 
-- Nemotron runs vLLM and exposes an OpenAI-compatible API on
+- Nemotron runs TensorRT-LLM and exposes an OpenAI-compatible API on
   `http://localhost:9000/v1` by default.
 - Runtime caches are persisted under `./data/nemotron/`.
 - Change the port by editing `NEMOTRON_PORT` in `.env`.
-- This stack is tuned for DGX Spark with a conservative default profile:
-  `NEMOTRON_GPU_MEMORY_UTILIZATION=0.75` and
-  `NEMOTRON_MAX_MODEL_LEN=131072`.
+- This stack follows NVIDIA's DGX Spark guidance for Nemotron 3 Super:
+  `NEMOTRON_GPU_MEMORY_UTILIZATION=0.9`,
+  `NEMOTRON_MAX_MODEL_LEN=1048576`,
+  `NEMOTRON_MAX_NUM_SEQS=8`, and
+  `NEMOTRON_MAX_NUM_TOKENS=8192`.
+- Compared with the earlier vLLM defaults in this repo, the TensorRT-LLM
+  profile is more aggressive on memory use, increases the default context from
+  131072 to 1048576 tokens, and uses FP16 Mamba cache with stochastic rounding
+  to make that fit on a single DGX Spark.
 
 ## Build And Run
 
@@ -162,15 +169,22 @@ Build everything:
 docker compose build
 ```
 
+Pull the NVIDIA Nemotron runtime image:
+
+```bash
+docker compose pull nemotron
+```
+
 Start everything:
 
 ```bash
 docker compose up -d
 ```
 
-For a fresh checkout, the most common first command is:
+For a fresh checkout, the most common first commands are:
 
 ```bash
+docker compose pull nemotron
 docker compose up -d --build
 ```
 
@@ -289,16 +303,15 @@ Why:
 This is a good fit for this repo because the goal is "check out the repo and
 have everything live alongside it".
 
-## Notes On Nemotron Builds
+## Notes On Nemotron Runtime
 
-- `docker compose build nemotron` is a real source build.
-- The first build can take a long time.
-- It compiles and packages NCCL, FlashInfer, and vLLM for the target platform.
-- Avoid running a heavy Nemotron source build at the same time as the live
-  Nemotron service on a DGX Spark. They compete for unified memory and the
-  running model can fail to start if the build is consuming too much memory.
-- Build details for that image live in
-  [`./vendor/nemotron-build/README.md`](./vendor/nemotron-build/README.md).
+- `nemotron` now uses NVIDIA's prebuilt TensorRT-LLM container instead of a
+  local source build.
+- The first start can still take a while because the model weights must be
+  downloaded and the runtime may build/cache kernels for the local Spark.
+- The legacy vLLM source-build path is still in
+  [`./vendor/nemotron-build/README.md`](./vendor/nemotron-build/README.md) if
+  you ever need to revert.
 
 ## Public Repo Checklist
 
@@ -325,11 +338,13 @@ Check:
 If logs mention insufficient free memory, either:
 - stop other GPU workloads
 - lower `NEMOTRON_GPU_MEMORY_UTILIZATION` in `.env`
+- lower `NEMOTRON_MAX_MODEL_LEN` in `.env`
 
 On busy machines, the failure can happen even when the GPU is large enough in
-total because vLLM checks free memory at startup, not just installed memory.
-This repo now defaults that setting to `0.75` and a `131072` max context so
-the box keeps more headroom for host-side work.
+total because the TensorRT-LLM profile is configured for a large 1M-token
+context window and a high free-memory fraction by default. The repo now follows
+NVIDIA's more aggressive Spark profile, so reducing either knob is the first
+thing to try if you want more headroom for host-side work.
 
 ### Hermes is up but Telegram conflicts
 

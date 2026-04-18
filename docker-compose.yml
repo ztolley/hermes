@@ -71,48 +71,58 @@ services:
     restart: unless-stopped
 
   nemotron:
-    build:
-      context: ./vendor/nemotron-build
-      dockerfile: Dockerfile
-    image: vllm-node:latest
-    container_name: vllm-nemotron-super
+    image: nvcr.io/nvidia/tensorrt-llm/release:1.3.0rc9
+    container_name: trtllm-nemotron-super
     command:
       - bash
       - -lc
-      - >
-        vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
-        --kv-cache-dtype fp8
-        --moe-backend marlin
-        --trust-remote-code
-        --gpu-memory-utilization ${NEMOTRON_GPU_MEMORY_UTILIZATION:-0.9}
-        --max-model-len ${NEMOTRON_MAX_MODEL_LEN:-262144}
-        --max-num-seqs ${NEMOTRON_MAX_NUM_SEQS:-4}
-        --enable-prefix-caching
-        --host 0.0.0.0
-        --port ${NEMOTRON_PORT:-9000}
-        --async-scheduling
-        --enable-auto-tool-choice
-        --load-format fastsafetensors
-        --tool-call-parser qwen3_coder
-        --reasoning-parser nemotron_v3
-        --mamba_ssm_cache_dtype float32
-        --tensor-parallel-size ${NEMOTRON_TENSOR_PARALLEL_SIZE:-1}
-        --attention-backend TRITON_ATTN
-        --quantization fp4
+      - |
+        set -euo pipefail
+        python3 - <<'PY'
+        from pathlib import Path
+        from string import Template
+        import os
+
+        template = Path("/app/extra-llm-api-config.yml.template").read_text()
+        config = Template(template).substitute(
+            NEMOTRON_GPU_MEMORY_UTILIZATION=os.environ.get(
+                "NEMOTRON_GPU_MEMORY_UTILIZATION", "0.9"
+            ),
+            NEMOTRON_MAX_NUM_SEQS=os.environ.get("NEMOTRON_MAX_NUM_SEQS", "8"),
+        )
+        Path("/tmp/extra-llm-api-config.yml").write_text(config)
+        PY
+
+        exec trtllm-serve serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4 \
+          --backend pytorch \
+          --host 0.0.0.0 \
+          --port $${NEMOTRON_PORT:-9000} \
+          --max_batch_size $${NEMOTRON_MAX_NUM_SEQS:-8} \
+          --max_num_tokens $${NEMOTRON_MAX_NUM_TOKENS:-8192} \
+          --tp_size $${NEMOTRON_TENSOR_PARALLEL_SIZE:-1} \
+          --ep_size 1 \
+          --trust_remote_code \
+          --config /tmp/extra-llm-api-config.yml \
+          --reasoning_parser nano-v3 \
+          --tool_parser qwen3_coder \
+          --max_seq_len $${NEMOTRON_MAX_MODEL_LEN:-1048576} \
+          --served_model_name nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
     environment:
       HF_HOME: /var/cache/huggingface
+      TLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
       PYTHONUNBUFFERED: "1"
-      VLLM_FLASHINFER_ALLREDUCE_BACKEND: trtllm
-      VLLM_NVFP4_GEMM_BACKEND: marlin
-      VLLM_USE_FLASHINFER_MOE_FP4: "0"
-      VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
+      HF_TOKEN: ${HF_TOKEN:-}
+      NEMOTRON_PORT: ${NEMOTRON_PORT:-9000}
+      NEMOTRON_TENSOR_PARALLEL_SIZE: ${NEMOTRON_TENSOR_PARALLEL_SIZE:-1}
+      NEMOTRON_GPU_MEMORY_UTILIZATION: ${NEMOTRON_GPU_MEMORY_UTILIZATION:-0.9}
+      NEMOTRON_MAX_MODEL_LEN: ${NEMOTRON_MAX_MODEL_LEN:-1048576}
+      NEMOTRON_MAX_NUM_SEQS: ${NEMOTRON_MAX_NUM_SEQS:-8}
+      NEMOTRON_MAX_NUM_TOKENS: ${NEMOTRON_MAX_NUM_TOKENS:-8192}
     volumes:
       - ./data/nemotron/huggingface:/var/cache/huggingface
-      - ./data/nemotron/vllm:/root/.cache/vllm
-      - ./data/nemotron/flashinfer:/root/.cache/flashinfer
-      - ./data/nemotron/triton:/root/.triton
+      - ./data/nemotron/trtllm:/root/.cache/tensorrt_llm
       - ./data/nemotron/tmp:/tmp
-      - ./settings/nemotron/mods/nemotron-super:/opt/nemotron-super-fix
+      - ./settings/nemotron/extra-llm-api-config.yml.template:/app/extra-llm-api-config.yml.template:ro
     ports:
       - "${NEMOTRON_PORT:-9000}:${NEMOTRON_PORT:-9000}"
     restart: unless-stopped
