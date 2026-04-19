@@ -71,6 +71,12 @@ tests on this Spark.
   Hermes image build.
 - `settings/hermes/config.yaml`
   Hermes config template rendered at container startup.
+- `scripts/benchmark_endpoints.py`
+  Local benchmark for the large Qwen, autocomplete, and Hermes endpoints.
+- `docs/health-performance.md`
+  Known-good health, memory, and performance baseline.
+- `compose.override.yml.example`
+  Starting point for local tuning experiments.
 - `secrets/ssh/`
   SSH files used by Hermes to run commands on the host.
 - `data/hermes/`
@@ -144,6 +150,13 @@ docker compose up -d --build
 docker compose ps
 curl http://localhost:8000/health
 curl http://localhost:3001/v1/models
+curl http://localhost:3002/v1/models
+```
+
+7. Capture a benchmark baseline:
+
+```bash
+python3 scripts/benchmark_endpoints.py --runs 2
 ```
 
 ## How Configuration Works
@@ -293,6 +306,15 @@ Check service status:
 ```bash
 docker compose ps
 ```
+
+Run the endpoint benchmark:
+
+```bash
+python3 scripts/benchmark_endpoints.py --runs 2
+```
+
+See [`docs/health-performance.md`](docs/health-performance.md) for the current
+known-good memory and performance baseline.
 
 View Hermes logs:
 

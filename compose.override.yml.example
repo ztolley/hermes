@@ -1,0 +1,32 @@
+# Copy this file to compose.override.yml for local experiments.
+#
+# docker compose automatically reads compose.override.yml, but this example file
+# is ignored until copied. Keep docker-compose.yml as the stable known-good
+# profile and put risky tuning here.
+
+services:
+  qwen:
+    environment:
+      # Larger-context experiment. Recreate qwen and hermes after changing this:
+      # docker compose up -d --force-recreate qwen hermes
+      MAX_MODEL_LEN: ${QWEN_MAX_MODEL_LEN:-196608}
+      GPU_MEMORY_UTIL: ${QWEN_GPU_MEMORY_UTILIZATION:-0.66}
+
+  qwen-autocomplete:
+    # Example autocomplete model swap. This is intentionally commented because
+    # the command is interpolated by Compose before container env vars exist.
+    #
+    # command:
+    #   - bash
+    #   - -lc
+    #   - >-
+    #     unset VLLM_BASE_DIR &&
+    #     exec vllm serve Qwen/Qwen2.5-Coder-7B
+    #     --host 0.0.0.0
+    #     --port 30000
+    #     --gpu-memory-utilization 0.12
+    #     --max-model-len 4096
+    #     --generation-config vllm
+    #     --load-format fastsafetensors
+    #     --attention-backend flashinfer
+    #     --tensor-parallel-size 1
