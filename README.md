@@ -1,9 +1,9 @@
-# Hermes + Nemotron Compose Stack
+# Hermes + Qwen3 Coder Next Compose Stack
 
 Self-contained Docker Compose stack for running:
 - `hermes` as the gateway / agent container with its built-in API server enabled
 - `open-webui` as a browser UI for Hermes
-- `nemotron` as a local vLLM OpenAI-compatible model server
+- `qwen` as a local vLLM OpenAI-compatible Qwen3 Coder Next NVFP4 model server
 
 The repo is laid out so someone can check it out, read this file, set a few
 environment values, and run the stack without depending on files outside the
@@ -21,8 +21,7 @@ Safe for public GitHub:
 - Enables Hermes's built-in OpenAI-compatible API server inside the gateway
   container.
 - Runs Open WebUI against that Hermes API so you get a browser chat interface.
-- Builds a Nemotron-capable vLLM image from source inside
-  `./vendor/nemotron-build`.
+- Runs a DGX Spark NVFP4-capable vLLM image for Qwen3 Coder Next.
 - Persists all runtime state under `./data`.
 - Keeps user-editable config under `./settings`.
 - Keeps host-SSH material under `./secrets/ssh`.
@@ -33,30 +32,29 @@ Safe for public GitHub:
   Main stack definition.
 - `Dockerfile`
   Hermes image build.
-- `vendor/nemotron-build/`
-  Self-contained vLLM / Nemotron build context.
+- `vendor/qwen-build/`
+  Historical experimental Qwen NVFP4 source-build context. The active Compose
+  stack uses a prebuilt DGX Spark image instead.
 - `settings/hermes/config.yaml`
   Hermes config template rendered at container startup.
-- `settings/nemotron/mods/`
-  Placeholder directory for Nemotron-specific runtime mods if needed later.
 - `secrets/ssh/`
   SSH files used by Hermes to run commands on the host.
 - `data/hermes/`
   Persistent Hermes runtime state.
 - `data/open-webui/`
   Persistent Open WebUI state, including its first-launch connection settings.
-- `data/nemotron/`
+- `data/qwen/`
   Persistent Hugging Face, vLLM, FlashInfer, Triton, and temp caches.
 
 ## Prerequisites
 
 - Docker with Compose plugin
 - NVIDIA Container Toolkit / GPU-enabled Docker
-- A DGX Spark or another compatible GPU host for the Nemotron runtime
+- A DGX Spark or another compatible GPU host for the Qwen NVFP4 runtime
 - `sshd` running on the host if you want Hermes to execute commands on that host
 - Network access during build
-  Hermes is cloned from GitHub and the Nemotron image fetches upstream source
-  code and packages during the build.
+  Hermes is cloned from GitHub during the build.
+  The Qwen runtime image is pulled from Docker Hub.
 
 ## First-Time Setup
 
@@ -72,6 +70,7 @@ cp .env.example .env
 - `TELEGRAM_HOME_CHANNEL`
 - `HERMES_HOST_SSH_USER`
 - `HERMES_HOST_SSH_CWD`
+- `HF_TOKEN` if the selected Hugging Face model requires authentication
 
 3. Prepare SSH material for Hermes if you want it to run commands on the host:
 
@@ -85,11 +84,12 @@ At minimum this folder should contain:
 4. Review ports and tuning in `.env` if needed:
 - `HERMES_GATEWAY_PORT=8000`
 - `OPEN_WEBUI_PORT=3000`
-- `NEMOTRON_PORT=9000`
+- `QWEN_PORT=9000`
 - `HERMES_API_KEY=...`
-- `NEMOTRON_GPU_MEMORY_UTILIZATION=0.75`
-- `NEMOTRON_MAX_MODEL_LEN=131072`
-- `NEMOTRON_MAX_NUM_SEQS=4`
+- `QWEN_MODEL=saricles/Qwen3-Coder-Next-NVFP4-GB10`
+- `QWEN_GPU_MEMORY_UTILIZATION=0.7`
+- `QWEN_MAX_MODEL_LEN=131072`
+- `QWEN_MAX_NUM_SEQS=2`
 
 5. Start the stack:
 
@@ -122,7 +122,7 @@ curl http://localhost:9000/v1/models
 That means:
 - edit `./settings/hermes/config.yaml` to change the template
 - edit `.env` to change template-backed values such as the SSH user, SSH port,
-  SSH working directory, or the Nemotron port
+  SSH working directory, or the Qwen port
 - edit `.env` to change Hermes API settings such as `HERMES_GATEWAY_PORT` and
   `HERMES_API_KEY`
 - inspect `/app/.hermes/config.yaml` inside the container if you want to see the
@@ -144,15 +144,20 @@ Important:
   connection in the Open WebUI admin UI or remove `./data/open-webui` and start
   fresh
 
-### Nemotron
+### Qwen
 
-- Nemotron runs vLLM and exposes an OpenAI-compatible API on
+- Qwen runs vLLM and exposes an OpenAI-compatible API on
   `http://localhost:9000/v1` by default.
-- Runtime caches are persisted under `./data/nemotron/`.
-- Change the port by editing `NEMOTRON_PORT` in `.env`.
-- This stack is tuned for DGX Spark with a conservative default profile:
-  `NEMOTRON_GPU_MEMORY_UTILIZATION=0.75` and
-  `NEMOTRON_MAX_MODEL_LEN=131072`.
+- Runtime caches are persisted under `./data/qwen/`.
+- Change the port by editing `QWEN_PORT` in `.env`.
+- This stack is tuned for DGX Spark using
+  `avarok/dgx-vllm-nvfp4-kernel:v23` and
+  `saricles/Qwen3-Coder-Next-NVFP4-GB10`.
+- The default profile uses `QWEN_GPU_MEMORY_UTILIZATION=0.7`,
+  `QWEN_MAX_MODEL_LEN=131072`, and `QWEN_MAX_NUM_SEQS=2`.
+- The default profile uses Marlin for NVFP4 GEMM/MoE because the FlashInfer
+  CUTLASS FP4 JIT path currently emits unsupported GB10 PTX instructions in
+  this image.
 
 ## Build And Run
 
@@ -194,13 +199,13 @@ View Hermes logs:
 docker compose logs -f hermes
 ```
 
-View Nemotron logs:
+View Qwen logs:
 
 ```bash
-docker compose logs -f nemotron
+docker compose logs -f qwen
 ```
 
-Check the Nemotron API from the host:
+Check the Qwen API from the host:
 
 ```bash
 curl http://localhost:9000/v1/models
@@ -249,7 +254,7 @@ docker compose up -d --build --force-recreate hermes
 By default:
 - Hermes API: `8000`
 - Open WebUI: `3000`
-- Nemotron: `9000`
+- Qwen vLLM: `9000`
 
 Both the internal and published ports are driven from `.env`.
 
@@ -289,16 +294,13 @@ Why:
 This is a good fit for this repo because the goal is "check out the repo and
 have everything live alongside it".
 
-## Notes On Nemotron Builds
+## Notes On Qwen Builds
 
-- `docker compose build nemotron` is a real source build.
-- The first build can take a long time.
-- It compiles and packages NCCL, FlashInfer, and vLLM for the target platform.
-- Avoid running a heavy Nemotron source build at the same time as the live
-  Nemotron service on a DGX Spark. They compete for unified memory and the
-  running model can fail to start if the build is consuming too much memory.
-- Build details for that image live in
-  [`./vendor/nemotron-build/README.md`](./vendor/nemotron-build/README.md).
+- The active `qwen` service does not build a local runtime image.
+- It uses `avarok/dgx-vllm-nvfp4-kernel:v23`, which includes the DGX Spark
+  NVFP4 kernel patches needed by this model.
+- `./vendor/qwen-build/` remains as a historical experimental source-build
+  context, but it is not used by the default Compose stack.
 
 ## Public Repo Checklist
 
@@ -320,15 +322,15 @@ Check:
 - `.env` has the right `HERMES_HOST_SSH_USER`, `HERMES_HOST_SSH_PORT`, and
   `HERMES_HOST_SSH_CWD` values
 
-### Nemotron fails during startup with a GPU memory error
+### Qwen fails during startup with a GPU memory error
 
 If logs mention insufficient free memory, either:
 - stop other GPU workloads
-- lower `NEMOTRON_GPU_MEMORY_UTILIZATION` in `.env`
+- lower `QWEN_GPU_MEMORY_UTILIZATION` in `.env`
 
 On busy machines, the failure can happen even when the GPU is large enough in
 total because vLLM checks free memory at startup, not just installed memory.
-This repo now defaults that setting to `0.75` and a `131072` max context so
+This repo defaults that setting to `0.7` and a `131072` max context so
 the box keeps more headroom for host-side work.
 
 ### Hermes is up but Telegram conflicts

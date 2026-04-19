@@ -71,40 +71,33 @@ services:
     restart: unless-stopped
 
   qwen:
-    build:
-      context: ./vendor/qwen-build
-      dockerfile: Dockerfile
-      args:
-        TORCH_CUDA_ARCH_LIST: "12.1a"
-    image: vllm-qwen:latest
+    image: avarok/dgx-vllm-nvfp4-kernel:v23
     container_name: vllm-qwen-coder
-    command:
-      - bash
-      - -lc
-      - >
-        vllm serve saricles/Qwen3-Coder-Next-NVFP4-GB10
-        --speculative-config.model togethercomputer/Aurora-Spec-Qwen3-Coder-Next-FP8
-        --speculative-config.num_speculative_tokens 4
-        --gpu-memory-utilization 0.7
-        --max-model-len 131072
-        --max-num-seqs 2
-        --max-parallel-loading-workers 1
-        --load-format safetensors
-        --enable-prefix-caching
-        --port 9000
-        --host 0.0.0.0
-        --port ${QWEN_PORT:-9000}
-        --tensor-parallel-size ${QWEN_TENSOR_PARALLEL_SIZE:-1}
-        --trust-remote-code
     environment:
-      HF_HOME: /var/cache/huggingface
+      MODEL: ${QWEN_MODEL:-saricles/Qwen3-Coder-Next-NVFP4-GB10}
+      HOST: 0.0.0.0
+      PORT: ${QWEN_PORT:-9000}
+      TENSOR_PARALLEL_SIZE: ${QWEN_TENSOR_PARALLEL_SIZE:-1}
+      GPU_MEMORY_UTIL: ${QWEN_GPU_MEMORY_UTILIZATION:-0.7}
+      MAX_MODEL_LEN: ${QWEN_MAX_MODEL_LEN:-131072}
+      MAX_NUM_SEQS: ${QWEN_MAX_NUM_SEQS:-2}
+      VLLM_EXTRA_ARGS: >-
+        --enable-prefix-caching
+        --trust-remote-code
+        --generation-config vllm
+        --max-parallel-loading-workers 1
+        --enable-auto-tool-choice
+        --tool-call-parser qwen3_coder
+      HF_HOME: /root/.cache/huggingface
       HF_TOKEN: ${HF_TOKEN}
       PYTHONUNBUFFERED: "1"
-      VLLM_FLASHINFER_ALLREDUCE_BACKEND: trtllm
-      VLLM_NVFP4_GEMM_BACKEND: marlin
+      VLLM_USE_FLASHINFER_MOE_FP4: ${QWEN_USE_FLASHINFER_MOE_FP4:-0}
+      VLLM_FLASHINFER_MOE_BACKEND: ${QWEN_FLASHINFER_MOE_BACKEND:-throughput}
+      VLLM_TEST_FORCE_FP8_MARLIN: ${QWEN_TEST_FORCE_FP8_MARLIN:-1}
+      VLLM_NVFP4_GEMM_BACKEND: ${QWEN_NVFP4_GEMM_BACKEND:-marlin}
       VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
     volumes:
-      - ./data/qwen/huggingface:/var/cache/huggingface
+      - ./data/qwen/huggingface:/root/.cache/huggingface
       - ./data/qwen/vllm:/root/.cache/vllm
       - ./data/qwen/flashinfer:/root/.cache/flashinfer
       - ./data/qwen/triton:/root/.triton
@@ -124,8 +117,8 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${QWEN_PORT:-9000}/v1/models >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 200
-      start_period: 3000s
+      retries: 40
+      start_period: 600s
     ulimits:
       memlock: -1
       stack: 67108864
