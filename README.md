@@ -4,6 +4,8 @@ Self-contained Docker Compose stack for running:
 - `hermes` as the gateway / agent container with its built-in API server enabled
 - `open-webui` as a browser UI for Hermes
 - `qwen` as a local vLLM OpenAI-compatible Qwen3 Coder Next NVFP4 model server
+- `qwen-autocomplete` as a small vLLM OpenAI-compatible model server for VS
+  Code autocomplete
 
 The repo is laid out so someone can check it out, read this file, set a few
 environment values, and run the stack without depending on files outside the
@@ -25,6 +27,12 @@ The active model server is:
 - model: `saricles/Qwen3-Coder-Next-NVFP4-GB10`
 - API: OpenAI-compatible vLLM on `http://localhost:9000/v1`
 - Hermes talks to it internally at `http://qwen:9000/v1`
+
+There is also a separate autocomplete model server:
+- image: `vllm-node:latest`
+- model: `Qwen/Qwen2.5-Coder-3B`
+- API: OpenAI-compatible vLLM on `http://localhost:30001/v1`
+- intended client: VS Code autocomplete / inline completion tooling
 
 This was not just the Docker run command from the Hugging Face discussion copied
 into Compose. That example was the useful starting point because it identified a
@@ -50,6 +58,7 @@ tests on this Spark.
   container.
 - Runs Open WebUI against that Hermes API so you get a browser chat interface.
 - Runs a DGX Spark NVFP4-capable vLLM image for Qwen3 Coder Next.
+- Runs a separate small Qwen coder model for VS Code autocomplete.
 - Persists all runtime state under `./data`.
 - Keeps user-editable config under `./settings`.
 - Keeps host-SSH material under `./secrets/ssh`.
@@ -72,7 +81,11 @@ tests on this Spark.
 - `data/open-webui/`
   Persistent Open WebUI state, including its first-launch connection settings.
 - `data/qwen/`
-  Persistent Hugging Face, vLLM, FlashInfer, Triton, and temp caches.
+  Persistent Hugging Face cache for Qwen models and runtime caches for the
+  large Qwen service.
+- `data/qwen-autocomplete/`
+  Persistent vLLM, FlashInfer, Triton, and temp caches for the small
+  autocomplete service.
 
 ## Prerequisites
 
@@ -113,11 +126,14 @@ At minimum this folder should contain:
 - `HERMES_GATEWAY_PORT=8000`
 - `OPEN_WEBUI_PORT=3000`
 - `QWEN_PORT=9000`
+- `AUTOCOMPLETE_PORT=30001`
 - `HERMES_API_KEY=...`
 - `QWEN_MODEL=saricles/Qwen3-Coder-Next-NVFP4-GB10`
-- `QWEN_GPU_MEMORY_UTILIZATION=0.7`
+- `QWEN_GPU_MEMORY_UTILIZATION=0.62`
 - `QWEN_MAX_MODEL_LEN=131072`
 - `QWEN_MAX_NUM_SEQS=2`
+- `AUTOCOMPLETE_MODEL=Qwen/Qwen2.5-Coder-3B`
+- `AUTOCOMPLETE_GPU_MEMORY_UTILIZATION=0.08`
 
 5. Start the stack:
 
@@ -186,8 +202,10 @@ Important:
 - This stack is tuned for DGX Spark using
   `avarok/dgx-vllm-nvfp4-kernel:v23` and
   `saricles/Qwen3-Coder-Next-NVFP4-GB10`.
-- The default profile uses `QWEN_GPU_MEMORY_UTILIZATION=0.7`,
+- The default profile uses `QWEN_GPU_MEMORY_UTILIZATION=0.62`,
   `QWEN_MAX_MODEL_LEN=131072`, and `QWEN_MAX_NUM_SEQS=2`.
+- The large model's GPU memory target is deliberately below the standalone
+  value so the small autocomplete service has room to start alongside it.
 - The default profile uses Marlin for NVFP4 GEMM/MoE because the FlashInfer
   CUTLASS FP4 JIT path currently emits unsupported GB10 PTX instructions in
   this image.
@@ -202,6 +220,35 @@ QWEN_NVFP4_GEMM_BACKEND=marlin
 
 Without those settings, this image either failed in vLLM's compressed-tensors
 MoE setup or failed later compiling FlashInfer FP4 kernels for GB10.
+
+### Qwen Autocomplete
+
+- `qwen-autocomplete` is a second vLLM server for editor autocomplete.
+- It is independent from Hermes and Open WebUI; those services continue to use
+  the large `qwen` service through Hermes.
+- It listens on `http://localhost:30001/v1` by default.
+- The default model is `Qwen/Qwen2.5-Coder-3B`.
+- It uses `vllm-node:latest`, the same local image used by the older
+  `~/Development/compose` autocomplete setup.
+- It receives the same `HF_TOKEN` as the large model so gated or rate-limited
+  Hugging Face downloads work consistently.
+- It reserves a small GPU slice with
+  `AUTOCOMPLETE_GPU_MEMORY_UTILIZATION=0.08` so it can run alongside the large
+  Qwen3 Coder Next service.
+- It uses `--generation-config vllm` so the server does not inherit unexpected
+  generation defaults from the model repository.
+
+Point VS Code / Roo / autocomplete tooling at:
+
+```text
+http://spark-1.local:30001/v1
+```
+
+Use the model name:
+
+```text
+Qwen/Qwen2.5-Coder-3B
+```
 
 ## Build And Run
 
@@ -220,7 +267,7 @@ docker compose up -d
 For a fresh checkout, the most common first command is:
 
 ```bash
-docker compose up -d --build hermes open-webui qwen
+docker compose up -d --build hermes open-webui qwen qwen-autocomplete
 ```
 
 The `qwen` image is pulled, not built locally. If only Qwen changed or you just
@@ -228,6 +275,12 @@ want to restart the model server:
 
 ```bash
 docker compose up -d --force-recreate qwen
+```
+
+Restart only the VS Code autocomplete model:
+
+```bash
+docker compose up -d --force-recreate qwen-autocomplete
 ```
 
 Start and stream logs:
@@ -256,10 +309,22 @@ View Qwen logs:
 docker compose logs -f qwen
 ```
 
+View autocomplete logs:
+
+```bash
+docker compose logs -f qwen-autocomplete
+```
+
 Check the Qwen API from the host:
 
 ```bash
 curl http://localhost:9000/v1/models
+```
+
+Check the autocomplete API from the host:
+
+```bash
+curl http://localhost:30001/v1/models
 ```
 
 Check the Hermes API from the host:
@@ -306,6 +371,7 @@ By default:
 - Hermes API: `8000`
 - Open WebUI: `3000`
 - Qwen vLLM: `9000`
+- Qwen autocomplete vLLM: `30001`
 
 Both the internal and published ports are driven from `.env`.
 
@@ -350,6 +416,9 @@ have everything live alongside it".
 - The active `qwen` service does not build a local runtime image.
 - It uses `avarok/dgx-vllm-nvfp4-kernel:v23`, which includes the DGX Spark
   NVFP4 kernel patches needed by this model.
+- The `qwen-autocomplete` service also does not build locally. It uses the
+  existing local `vllm-node:latest` image and sets `pull_policy: never` so
+  Compose does not try to pull it from a registry.
 - `./vendor/qwen-build/` remains as a historical experimental source-build
   context, but it is not used by the default Compose stack.
 
@@ -378,6 +447,7 @@ Check:
 If logs mention insufficient free memory, either:
 - stop other GPU workloads
 - lower `QWEN_GPU_MEMORY_UTILIZATION` in `.env`
+- lower `AUTOCOMPLETE_GPU_MEMORY_UTILIZATION` in `.env`
 
 On busy machines, the failure can happen even when the GPU is large enough in
 total because vLLM checks free memory at startup, not just installed memory.

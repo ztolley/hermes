@@ -122,3 +122,57 @@ services:
     ulimits:
       memlock: -1
       stack: 67108864
+
+  qwen-autocomplete:
+    image: ${AUTOCOMPLETE_IMAGE:-vllm-node:latest}
+    pull_policy: never
+    container_name: qwen-autocomplete
+    environment:
+      HF_HOME: /root/.cache/huggingface
+      HF_TOKEN: ${HF_TOKEN}
+      HF_HUB_DISABLE_XET: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./data/qwen/huggingface:/root/.cache/huggingface
+      - ./data/qwen-autocomplete/vllm:/root/.cache/vllm
+      - ./data/qwen-autocomplete/flashinfer:/root/.cache/flashinfer
+      - ./data/qwen-autocomplete/triton:/root/.triton
+      - ./data/qwen-autocomplete/tmp:/tmp
+    ports:
+      - "${AUTOCOMPLETE_PORT:-30001}:30000"
+    command:
+      - bash
+      - -lc
+      - >-
+        unset VLLM_BASE_DIR &&
+        exec vllm serve ${AUTOCOMPLETE_MODEL:-Qwen/Qwen2.5-Coder-3B}
+        --host 0.0.0.0
+        --port 30000
+        --gpu-memory-utilization ${AUTOCOMPLETE_GPU_MEMORY_UTILIZATION:-0.08}
+        --max-model-len ${AUTOCOMPLETE_MAX_MODEL_LEN:-4096}
+        --generation-config vllm
+        --load-format fastsafetensors
+        --attention-backend flashinfer
+        --tensor-parallel-size ${AUTOCOMPLETE_TP_SIZE:-1}
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: 8gb
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python3 -c "import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:30000/v1/models', timeout=5).read()"
+      interval: 30s
+      timeout: 10s
+      retries: 30
+      start_period: 900s
+    stop_grace_period: 5m
+    ulimits:
+      memlock: -1
+      stack: 67108864
