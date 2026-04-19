@@ -123,8 +123,8 @@ services:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${NEMOTRON_PORT:-9000}/v1/models >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 20
-      start_period: 300s
+      retries: 200
+      start_period: 3000s
     ulimits:
       memlock: -1
       stack: 67108864
