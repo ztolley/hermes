@@ -98,6 +98,7 @@ services:
         --mamba_ssm_cache_dtype float32
         --tensor-parallel-size ${NEMOTRON_TENSOR_PARALLEL_SIZE:-1}
         --attention-backend TRITON_ATTN
+        --no-enable-flashinfer-autotune
         --quantization fp4
     environment:
       HF_HOME: /var/cache/huggingface
