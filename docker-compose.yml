@@ -12,7 +12,7 @@ services:
       - sh
       - -lc
     depends_on:
-      nemotron:
+      qwen:
         condition: service_healthy
     env_file:
       - .env
@@ -70,57 +70,58 @@ services:
       - ./data/open-webui:/app/backend/data
     restart: unless-stopped
 
-  nemotron:
+  qwen:
     build:
-      context: ./vendor/nemotron-build
+      context: ./vendor/qwen-build
       dockerfile: Dockerfile
-    image: vllm-node:latest
-    container_name: vllm-nemotron-super
+      args:
+        TORCH_CUDA_ARCH_LIST: "12.1a"
+    image: vllm-qwen:latest
+    container_name: vllm-qwen-coder
     command:
       - bash
       - -lc
       - >
-        vllm serve nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
-        --kv-cache-dtype fp8
-        --moe-backend marlin
-        --trust-remote-code
-        --gpu-memory-utilization ${NEMOTRON_GPU_MEMORY_UTILIZATION:-0.9}
-        --max-model-len ${NEMOTRON_MAX_MODEL_LEN:-262144}
-        --max-num-seqs ${NEMOTRON_MAX_NUM_SEQS:-4}
+        vllm serve saricles/Qwen3-Coder-Next-NVFP4-GB10
+        --speculative-config.model togethercomputer/Aurora-Spec-Qwen3-Coder-Next-FP8
+        --speculative-config.num_speculative_tokens 4
+        --gpu-memory-utilization 0.7
+        --max-model-len 131072
+        --max-num-seqs 2
+        --max-parallel-loading-workers 1
+        --load-format safetensors
         --enable-prefix-caching
+        --port 9000
         --host 0.0.0.0
-        --port ${NEMOTRON_PORT:-9000}
-        --async-scheduling
-        --enable-auto-tool-choice
-        --load-format fastsafetensors
-        --tool-call-parser qwen3_coder
-        --reasoning-parser nemotron_v3
-        --mamba_ssm_cache_dtype float32
-        --tensor-parallel-size ${NEMOTRON_TENSOR_PARALLEL_SIZE:-1}
-        --attention-backend TRITON_ATTN
-        --no-enable-flashinfer-autotune
-        --quantization fp4
+        --port ${QWEN_PORT:-9000}
+        --tensor-parallel-size ${QWEN_TENSOR_PARALLEL_SIZE:-1}
+        --trust-remote-code
     environment:
       HF_HOME: /var/cache/huggingface
+      HF_TOKEN: ${HF_TOKEN}
       PYTHONUNBUFFERED: "1"
       VLLM_FLASHINFER_ALLREDUCE_BACKEND: trtllm
       VLLM_NVFP4_GEMM_BACKEND: marlin
-      VLLM_USE_FLASHINFER_MOE_FP4: "0"
       VLLM_ALLOW_LONG_MAX_MODEL_LEN: "1"
     volumes:
-      - ./data/nemotron/huggingface:/var/cache/huggingface
-      - ./data/nemotron/vllm:/root/.cache/vllm
-      - ./data/nemotron/flashinfer:/root/.cache/flashinfer
-      - ./data/nemotron/triton:/root/.triton
-      - ./data/nemotron/tmp:/tmp
-      - ./settings/nemotron/mods/nemotron-super:/opt/nemotron-super-fix
+      - ./data/qwen/huggingface:/var/cache/huggingface
+      - ./data/qwen/vllm:/root/.cache/vllm
+      - ./data/qwen/flashinfer:/root/.cache/flashinfer
+      - ./data/qwen/triton:/root/.triton
+      - ./data/qwen/tmp:/tmp
     ports:
-      - "${NEMOTRON_PORT:-9000}:${NEMOTRON_PORT:-9000}"
-    restart: unless-stopped
-    gpus: all
-    shm_size: 16gb
+      - "${QWEN_PORT:-9000}:${QWEN_PORT:-9000}"
+    # restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: 64gb
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${NEMOTRON_PORT:-9000}/v1/models >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${QWEN_PORT:-9000}/v1/models >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 200

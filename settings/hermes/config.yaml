@@ -1,7 +1,7 @@
 model:
-  default: nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4
+  default: saricles/Qwen3-Coder-Next-NVFP4-GB10
   provider: custom
-  base_url: http://nemotron:${NEMOTRON_PORT}/v1
+  base_url: http://qwen:${QWEN_PORT}/v1
 
 terminal:
   backend: ssh
