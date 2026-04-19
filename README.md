@@ -25,13 +25,13 @@ Docker container on the DGX Spark.
 The active model server is:
 - image: `avarok/dgx-vllm-nvfp4-kernel:v23`
 - model: `saricles/Qwen3-Coder-Next-NVFP4-GB10`
-- API: OpenAI-compatible vLLM on `http://localhost:9000/v1`
-- Hermes talks to it internally at `http://qwen:9000/v1`
+- API: OpenAI-compatible vLLM on `http://localhost:3001/v1`
+- Hermes talks to it internally at `http://qwen:3001/v1`
 
 There is also a separate autocomplete model server:
 - image: `vllm-node:latest`
 - model: `Qwen/Qwen2.5-Coder-3B`
-- API: OpenAI-compatible vLLM on `http://localhost:30001/v1`
+- API: OpenAI-compatible vLLM on `http://localhost:3002/v1`
 - intended client: VS Code autocomplete / inline completion tooling
 
 This was not just the Docker run command from the Hugging Face discussion copied
@@ -69,9 +69,6 @@ tests on this Spark.
   Main stack definition.
 - `Dockerfile`
   Hermes image build.
-- `vendor/qwen-build/`
-  Historical experimental Qwen NVFP4 source-build context. The active Compose
-  stack uses a prebuilt DGX Spark image instead.
 - `settings/hermes/config.yaml`
   Hermes config template rendered at container startup.
 - `secrets/ssh/`
@@ -125,8 +122,8 @@ At minimum this folder should contain:
 4. Review ports and tuning in `.env` if needed:
 - `HERMES_GATEWAY_PORT=8000`
 - `OPEN_WEBUI_PORT=3000`
-- `QWEN_PORT=9000`
-- `AUTOCOMPLETE_PORT=30001`
+- `QWEN_PORT=3001`
+- `AUTOCOMPLETE_PORT=3002`
 - `HERMES_API_KEY=...`
 - `QWEN_MODEL=saricles/Qwen3-Coder-Next-NVFP4-GB10`
 - `QWEN_GPU_MEMORY_UTILIZATION=0.62`
@@ -146,7 +143,7 @@ docker compose up -d --build
 ```bash
 docker compose ps
 curl http://localhost:8000/health
-curl http://localhost:9000/v1/models
+curl http://localhost:3001/v1/models
 ```
 
 ## How Configuration Works
@@ -191,10 +188,10 @@ Important:
 ### Qwen
 
 - Qwen runs vLLM and exposes an OpenAI-compatible API on
-  `http://localhost:9000/v1` by default.
+  `http://localhost:3001/v1` by default.
 - It uses the prebuilt DGX Spark image
-  `avarok/dgx-vllm-nvfp4-kernel:v23`; the active stack no longer builds the
-  experimental image in `./vendor/qwen-build`.
+  `avarok/dgx-vllm-nvfp4-kernel:v23`; the active stack no longer builds a
+  local Qwen runtime image.
 - The default model is `saricles/Qwen3-Coder-Next-NVFP4-GB10`, an NVFP4
   compressed Qwen3 Coder Next model intended for GB10 / DGX Spark.
 - Runtime caches are persisted under `./data/qwen/`.
@@ -226,7 +223,7 @@ MoE setup or failed later compiling FlashInfer FP4 kernels for GB10.
 - `qwen-autocomplete` is a second vLLM server for editor autocomplete.
 - It is independent from Hermes and Open WebUI; those services continue to use
   the large `qwen` service through Hermes.
-- It listens on `http://localhost:30001/v1` by default.
+- It listens on `http://localhost:3002/v1` by default.
 - The default model is `Qwen/Qwen2.5-Coder-3B`.
 - It uses `vllm-node:latest`, the same local image used by the older
   `~/Development/compose` autocomplete setup.
@@ -241,7 +238,7 @@ MoE setup or failed later compiling FlashInfer FP4 kernels for GB10.
 Point VS Code / Roo / autocomplete tooling at:
 
 ```text
-http://spark-1.local:30001/v1
+http://spark-1.local:3002/v1
 ```
 
 Use the model name:
@@ -318,13 +315,13 @@ docker compose logs -f qwen-autocomplete
 Check the Qwen API from the host:
 
 ```bash
-curl http://localhost:9000/v1/models
+curl http://localhost:3001/v1/models
 ```
 
 Check the autocomplete API from the host:
 
 ```bash
-curl http://localhost:30001/v1/models
+curl http://localhost:3002/v1/models
 ```
 
 Check the Hermes API from the host:
@@ -370,8 +367,8 @@ docker compose up -d --build --force-recreate hermes
 By default:
 - Hermes API: `8000`
 - Open WebUI: `3000`
-- Qwen vLLM: `9000`
-- Qwen autocomplete vLLM: `30001`
+- Qwen3 Coder Next vLLM: `3001`
+- Qwen autocomplete vLLM: `3002`
 
 Both the internal and published ports are driven from `.env`.
 
@@ -419,8 +416,6 @@ have everything live alongside it".
 - The `qwen-autocomplete` service also does not build locally. It uses the
   existing local `vllm-node:latest` image and sets `pull_policy: never` so
   Compose does not try to pull it from a registry.
-- `./vendor/qwen-build/` remains as a historical experimental source-build
-  context, but it is not used by the default Compose stack.
 
 ## Public Repo Checklist
 

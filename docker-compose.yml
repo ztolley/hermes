@@ -76,7 +76,7 @@ services:
     environment:
       MODEL: ${QWEN_MODEL:-saricles/Qwen3-Coder-Next-NVFP4-GB10}
       HOST: 0.0.0.0
-      PORT: ${QWEN_PORT:-9000}
+      PORT: ${QWEN_PORT:-3001}
       TENSOR_PARALLEL_SIZE: ${QWEN_TENSOR_PARALLEL_SIZE:-1}
       GPU_MEMORY_UTIL: ${QWEN_GPU_MEMORY_UTILIZATION:-0.7}
       MAX_MODEL_LEN: ${QWEN_MAX_MODEL_LEN:-131072}
@@ -103,7 +103,7 @@ services:
       - ./data/qwen/triton:/root/.triton
       - ./data/qwen/tmp:/tmp
     ports:
-      - "${QWEN_PORT:-9000}:${QWEN_PORT:-9000}"
+      - "${QWEN_PORT:-3001}:${QWEN_PORT:-3001}"
     # restart: unless-stopped
     deploy:
       resources:
@@ -114,7 +114,7 @@ services:
               capabilities: [gpu]
     shm_size: 64gb
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${QWEN_PORT:-9000}/v1/models >/dev/null || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${QWEN_PORT:-3001}/v1/models >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 40
@@ -139,7 +139,7 @@ services:
       - ./data/qwen-autocomplete/triton:/root/.triton
       - ./data/qwen-autocomplete/tmp:/tmp
     ports:
-      - "${AUTOCOMPLETE_PORT:-30001}:30000"
+      - "${AUTOCOMPLETE_PORT:-3002}:30000"
     command:
       - bash
       - -lc
