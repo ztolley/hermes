@@ -15,6 +15,34 @@ Safe for public GitHub:
 - do not commit `./secrets/ssh/*` other than `./secrets/ssh/README.md`
 - do not commit anything under `./data`
 
+## Simple Version
+
+Yes: this stack runs Qwen3 Coder Next 80B as an NVFP4-compressed model in a
+Docker container on the DGX Spark.
+
+The active model server is:
+- image: `avarok/dgx-vllm-nvfp4-kernel:v23`
+- model: `saricles/Qwen3-Coder-Next-NVFP4-GB10`
+- API: OpenAI-compatible vLLM on `http://localhost:9000/v1`
+- Hermes talks to it internally at `http://qwen:9000/v1`
+
+This was not just the Docker run command from the Hugging Face discussion copied
+into Compose. That example was the useful starting point because it identified a
+DGX Spark-capable vLLM image. The Compose setup here also had to:
+- wire the image into this stack's `qwen` service
+- mount the existing repo-local Hugging Face and vLLM caches
+- expose it on the existing `QWEN_PORT`
+- keep Hermes and Open WebUI pointed at the Qwen-backed API path
+- disable the broken FlashInfer FP4 MoE path for this image on GB10
+- force the Marlin NVFP4 fallback so the server actually starts
+
+The important caveat is that the model is still NVFP4, but the working backend
+is Marlin, not the faster FlashInfer CUTLASS backend mentioned in some examples.
+FlashInfer CUTLASS got further than the old custom build, but then failed during
+JIT compilation with unsupported GB10 PTX instructions. Marlin starts cleanly
+and produced around 58 output tokens/second on warmed short code-completion
+tests on this Spark.
+
 ## What This Stack Does
 
 - Builds Hermes from the upstream `NousResearch/hermes-agent` repository.
@@ -148,6 +176,11 @@ Important:
 
 - Qwen runs vLLM and exposes an OpenAI-compatible API on
   `http://localhost:9000/v1` by default.
+- It uses the prebuilt DGX Spark image
+  `avarok/dgx-vllm-nvfp4-kernel:v23`; the active stack no longer builds the
+  experimental image in `./vendor/qwen-build`.
+- The default model is `saricles/Qwen3-Coder-Next-NVFP4-GB10`, an NVFP4
+  compressed Qwen3 Coder Next model intended for GB10 / DGX Spark.
 - Runtime caches are persisted under `./data/qwen/`.
 - Change the port by editing `QWEN_PORT` in `.env`.
 - This stack is tuned for DGX Spark using
@@ -158,13 +191,24 @@ Important:
 - The default profile uses Marlin for NVFP4 GEMM/MoE because the FlashInfer
   CUTLASS FP4 JIT path currently emits unsupported GB10 PTX instructions in
   this image.
+- These backend settings are the key differences from the simple Docker run
+  example:
+
+```env
+QWEN_USE_FLASHINFER_MOE_FP4=0
+QWEN_TEST_FORCE_FP8_MARLIN=1
+QWEN_NVFP4_GEMM_BACKEND=marlin
+```
+
+Without those settings, this image either failed in vLLM's compressed-tensors
+MoE setup or failed later compiling FlashInfer FP4 kernels for GB10.
 
 ## Build And Run
 
-Build everything:
+Build Hermes:
 
 ```bash
-docker compose build
+docker compose build hermes
 ```
 
 Start everything:
@@ -176,7 +220,14 @@ docker compose up -d
 For a fresh checkout, the most common first command is:
 
 ```bash
-docker compose up -d --build
+docker compose up -d --build hermes open-webui qwen
+```
+
+The `qwen` image is pulled, not built locally. If only Qwen changed or you just
+want to restart the model server:
+
+```bash
+docker compose up -d --force-recreate qwen
 ```
 
 Start and stream logs:
