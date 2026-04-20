@@ -194,10 +194,8 @@ def main() -> int:
 
     env = {**load_dotenv(Path(args.env_file)), **os.environ}
     qwen_port = env.get("QWEN_PORT", "3001")
-    autocomplete_port = env.get("AUTOCOMPLETE_PORT", "3002")
     hermes_port = env.get("HERMES_GATEWAY_PORT", "8000")
     qwen_model = env.get("QWEN_MODEL", "saricles/Qwen3-Coder-Next-NVFP4-GB10")
-    autocomplete_model = env.get("AUTOCOMPLETE_MODEL", "Qwen/Qwen2.5-Coder-3B")
 
     results: list[EndpointResult] = []
     results.extend(
@@ -220,22 +218,6 @@ def main() -> int:
             timeout=args.timeout,
         )
     )
-    results.extend(
-        benchmark_endpoint(
-            name="qwen-autocomplete",
-            url=f"http://127.0.0.1:{autocomplete_port}/v1/completions",
-            payload={
-                "model": autocomplete_model,
-                "prompt": "def normalize_path(path):\n    ",
-                "max_tokens": 64,
-                "temperature": 0,
-            },
-            headers=None,
-            runs=args.runs,
-            timeout=args.timeout,
-        )
-    )
-
     hermes_key = env.get("HERMES_API_KEY")
     if hermes_key:
         results.extend(

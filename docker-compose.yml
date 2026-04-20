@@ -64,10 +64,24 @@ services:
     environment:
       OPENAI_API_BASE_URL: http://hermes:${HERMES_GATEWAY_PORT:-8000}/v1
       OPENAI_API_KEY: ${HERMES_API_KEY}
+      WEBUI_URL: http://localhost:${OPEN_WEBUI_PORT:-3000}
+      ENABLE_IMAGE_GENERATION: ${OPENWEBUI_ENABLE_IMAGE_GENERATION:-false}
+      IMAGE_GENERATION_ENGINE: ${OPENWEBUI_IMAGE_GENERATION_ENGINE:-openai}
+      IMAGE_GENERATION_MODEL: ${OPENWEBUI_IMAGE_GENERATION_MODEL:-}
+      IMAGE_SIZE: ${OPENWEBUI_IMAGE_SIZE:-auto}
+      IMAGES_OPENAI_API_BASE_URL: ${OPENWEBUI_IMAGES_OPENAI_API_BASE_URL:-https://api.openai.com/v1}
+      IMAGES_OPENAI_API_KEY: ${OPENWEBUI_IMAGES_OPENAI_API_KEY:-}
+      IMAGES_OPENAI_API_PARAMS: ${OPENWEBUI_IMAGES_OPENAI_API_PARAMS:-{}}
+      WHISPER_MODEL: ${OPENWEBUI_WHISPER_MODEL:-base}
+      WHISPER_VAD_FILTER: ${OPENWEBUI_WHISPER_VAD_FILTER:-false}
+      WHISPER_LANGUAGE: ${OPENWEBUI_WHISPER_LANGUAGE:-}
+      WHISPER_COMPUTE_TYPE: ${OPENWEBUI_WHISPER_COMPUTE_TYPE:-int8}
     ports:
       - "${OPEN_WEBUI_PORT:-3000}:8080"
     volumes:
       - ./data/open-webui:/app/backend/data
+      - ./data/open-webui/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./data/open-webui/nginx.conf.d:/etc/nginx/conf.d:ro
     restart: unless-stopped
 
   qwen:
@@ -88,6 +102,7 @@ services:
         --max-parallel-loading-workers 1
         --enable-auto-tool-choice
         --tool-call-parser qwen3_coder
+        ${QWEN_SPECULATIVE_ARGS:-}
       HF_HOME: /root/.cache/huggingface
       HF_TOKEN: ${HF_TOKEN}
       PYTHONUNBUFFERED: "1"
@@ -119,60 +134,6 @@ services:
       timeout: 10s
       retries: 40
       start_period: 600s
-    ulimits:
-      memlock: -1
-      stack: 67108864
-
-  qwen-autocomplete:
-    image: ${AUTOCOMPLETE_IMAGE:-vllm-node:latest}
-    pull_policy: never
-    container_name: qwen-autocomplete
-    environment:
-      HF_HOME: /root/.cache/huggingface
-      HF_TOKEN: ${HF_TOKEN}
-      HF_HUB_DISABLE_XET: "1"
-      PYTHONUNBUFFERED: "1"
-    volumes:
-      - ./data/qwen/huggingface:/root/.cache/huggingface
-      - ./data/qwen-autocomplete/vllm:/root/.cache/vllm
-      - ./data/qwen-autocomplete/flashinfer:/root/.cache/flashinfer
-      - ./data/qwen-autocomplete/triton:/root/.triton
-      - ./data/qwen-autocomplete/tmp:/tmp
-    ports:
-      - "${AUTOCOMPLETE_PORT:-3002}:30000"
-    command:
-      - bash
-      - -lc
-      - >-
-        unset VLLM_BASE_DIR &&
-        exec vllm serve ${AUTOCOMPLETE_MODEL:-Qwen/Qwen2.5-Coder-3B}
-        --host 0.0.0.0
-        --port 30000
-        --gpu-memory-utilization ${AUTOCOMPLETE_GPU_MEMORY_UTILIZATION:-0.08}
-        --max-model-len ${AUTOCOMPLETE_MAX_MODEL_LEN:-4096}
-        --generation-config vllm
-        --load-format fastsafetensors
-        --attention-backend flashinfer
-        --tensor-parallel-size ${AUTOCOMPLETE_TP_SIZE:-1}
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-    shm_size: 8gb
-    healthcheck:
-      test:
-        - CMD-SHELL
-        - >-
-          python3 -c "import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:30000/v1/models', timeout=5).read()"
-      interval: 30s
-      timeout: 10s
-      retries: 30
-      start_period: 900s
-    stop_grace_period: 5m
     ulimits:
       memlock: -1
       stack: 67108864
