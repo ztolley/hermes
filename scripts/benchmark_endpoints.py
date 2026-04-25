@@ -20,6 +20,12 @@ from pathlib import Path
 from typing import Any
 
 
+TEST_IMAGE_PNG = (
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0l"
+    "EQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+)
+
+
 @dataclass
 class EndpointResult:
     name: str
@@ -189,13 +195,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", default=".env")
     parser.add_argument("--runs", type=int, default=2)
+    parser.add_argument("--hermes-runs", type=int, default=1)
+    parser.add_argument("--include-vision", action="store_true")
+    parser.add_argument("--vision-runs", type=int, default=1)
     parser.add_argument("--timeout", type=int, default=180)
     args = parser.parse_args()
 
     env = {**load_dotenv(Path(args.env_file)), **os.environ}
     qwen_port = env.get("QWEN_PORT", "3001")
+    qwen_vl_port = env.get("QWEN_VL_PORT", "3003")
     hermes_port = env.get("HERMES_GATEWAY_PORT", "8000")
     qwen_model = env.get("QWEN_MODEL", "saricles/Qwen3-Coder-Next-NVFP4-GB10")
+    qwen_vl_model = env.get("QWEN_VL_MODEL", "Qwen/Qwen3-VL-8B-Instruct-FP8")
 
     results: list[EndpointResult] = []
     results.extend(
@@ -218,6 +229,38 @@ def main() -> int:
             timeout=args.timeout,
         )
     )
+    if args.include_vision:
+        results.extend(
+            benchmark_endpoint(
+                name="qwen-vl",
+                url=f"http://127.0.0.1:{qwen_vl_port}/v1/chat/completions",
+                payload={
+                    "model": qwen_vl_model,
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "text",
+                                    "text": "Describe this test image in one short sentence.",
+                                },
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:image/png;base64,{TEST_IMAGE_PNG}",
+                                    },
+                                },
+                            ],
+                        }
+                    ],
+                    "max_tokens": 32,
+                    "temperature": 0,
+                },
+                headers=None,
+                runs=args.vision_runs,
+                timeout=args.timeout,
+            )
+        )
     hermes_key = env.get("HERMES_API_KEY")
     if hermes_key:
         results.extend(
@@ -236,7 +279,7 @@ def main() -> int:
                     "temperature": 0,
                 },
                 headers={"Authorization": f"Bearer {hermes_key}"},
-                runs=1,
+                runs=args.hermes_runs,
                 timeout=args.timeout,
             )
         )

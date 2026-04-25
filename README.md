@@ -229,6 +229,33 @@ Use the model name:
 saricles/Qwen3-Coder-Next-NVFP4-GB10
 ```
 
+### Optional Vision Server
+
+The Compose file includes an isolated Qwen3-VL service for image-understanding
+experiments. It is behind the `vision` profile and is not started by the normal
+`docker compose up -d` command.
+
+Start it when you want to measure local vision support:
+
+```bash
+docker compose --profile vision up -d qwen-vl
+```
+
+It listens on:
+
+```text
+http://spark-1.local:3003/v1
+```
+
+The default model is:
+
+```text
+Qwen/Qwen3-VL-8B-Instruct-FP8
+```
+
+Keep this service experimental until its memory and latency have been measured
+with the large coder model running.
+
 ## Build And Run
 
 Build Hermes:
@@ -274,6 +301,12 @@ Run the endpoint benchmark:
 
 ```bash
 python3 scripts/benchmark_endpoints.py --runs 2
+```
+
+Include the optional vision endpoint after `qwen-vl` is running:
+
+```bash
+python3 scripts/benchmark_endpoints.py --runs 10 --hermes-runs 3 --include-vision
 ```
 
 See [`docs/health-performance.md`](docs/health-performance.md) for the current

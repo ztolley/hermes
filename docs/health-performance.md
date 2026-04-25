@@ -23,11 +23,15 @@ Large model:
 Observed on April 20, 2026 after moving Continue autocomplete to the large
 model and removing the standalone autocomplete service:
 
-- Large Qwen GPU process memory: about `77.8 GiB`
+- Large Qwen GPU process memory: about `77.1-77.8 GiB`
 - Open WebUI container memory: about `0.7 GiB`
 - Hermes container memory: about `0.2 GiB`
 - Memory reclaimed from removing the standalone autocomplete service: about
   `10.8 GiB`
+
+The optional Qwen3-VL vision server is not part of the stable profile. It is
+behind the `vision` Compose profile and should be measured separately before it
+is left running.
 
 The large model is capped by `QWEN_MAX_NUM_SEQS=2`, so the reported `6.11x`
 capacity is headroom, not the active request concurrency limit.
@@ -79,6 +83,13 @@ qwen-large: median_ttft_s=0.080, median_output_tok_s=50.98
 hermes-gateway: median_ttft_s=2.819
 ```
 
+Post-restart run on April 20, 2026 after removing autocomplete:
+
+```text
+qwen-large: median_ttft_s=0.073, median_output_tok_s=51.19
+hermes-gateway: median_ttft_s=2.867
+```
+
 The script measures streaming time-to-first-token and non-streaming throughput
 as separate requests, so treat the numbers as comparison baselines rather than
 as a single end-to-end trace.
@@ -86,6 +97,7 @@ as a single end-to-end trace.
 ## Tuning Candidates
 
 Safe first experiments:
+- optional `qwen-vl` profile for local image understanding
 - `QWEN_MAX_MODEL_LEN=196608` with `QWEN_MAX_NUM_SEQS=2`
 - a slightly higher `QWEN_GPU_MEMORY_UTILIZATION`, now that the large model is
   the only local text model server

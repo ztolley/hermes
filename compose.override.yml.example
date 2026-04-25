@@ -11,3 +11,11 @@ services:
       # docker compose up -d --force-recreate qwen hermes
       MAX_MODEL_LEN: ${QWEN_MAX_MODEL_LEN:-196608}
       GPU_MEMORY_UTIL: ${QWEN_GPU_MEMORY_UTILIZATION:-0.66}
+
+  qwen-vl:
+    environment:
+      # Vision experiment tuning. Start explicitly with:
+      # docker compose --profile vision up -d qwen-vl
+      GPU_MEMORY_UTIL: ${QWEN_VL_GPU_MEMORY_UTILIZATION:-0.16}
+      MAX_MODEL_LEN: ${QWEN_VL_MAX_MODEL_LEN:-32768}
+      MAX_NUM_SEQS: ${QWEN_VL_MAX_NUM_SEQS:-1}

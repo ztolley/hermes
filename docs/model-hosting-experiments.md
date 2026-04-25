@@ -10,6 +10,7 @@ Observed on April 20, 2026 after proving Continue works well against the large
 model and removing the standalone autocomplete service:
 
 - Large Qwen GPU process memory: about `77.8 GiB`
+- Large Qwen GPU process memory after restart: about `77.1 GiB`
 - Open WebUI container memory: about `0.7 GiB`
 - Hermes container memory: about `0.2 GiB`
 - Total vLLM GPU process memory: about `77.8 GiB`
@@ -75,6 +76,46 @@ Accept the change only if all of these are true:
 
 If it fails or memory is worse, clear `QWEN_SPECULATIVE_ARGS` and recreate
 `qwen`.
+
+## Experiment 2: Local Vision
+
+The first local media experiment is image understanding, not image generation.
+Run it as a separate vLLM service so the main coder model stays unchanged.
+
+Default candidate:
+
+```text
+Qwen/Qwen3-VL-8B-Instruct-FP8
+```
+
+The service is disabled by default behind the `vision` Compose profile:
+
+```bash
+docker compose --profile vision up -d qwen-vl
+docker compose --profile vision ps qwen-vl
+python3 scripts/benchmark_endpoints.py --runs 10 --hermes-runs 3 --include-vision
+nvidia-smi
+docker stats --no-stream
+```
+
+Initial limits:
+
+```env
+QWEN_VL_GPU_MEMORY_UTILIZATION=0.16
+QWEN_VL_MAX_MODEL_LEN=32768
+QWEN_VL_MAX_NUM_SEQS=1
+QWEN_VL_IMAGE_LIMIT=1
+QWEN_VL_MM_PROCESSOR_CACHE_GB=1
+```
+
+Keep the service only if it starts alongside the large coder model, answers a
+single-image prompt reliably, and leaves enough memory headroom for normal
+coding use. If it is too heavy, stop and remove only the vision service:
+
+```bash
+docker compose --profile vision stop qwen-vl
+docker rm vllm-qwen-vl
+```
 
 ## Experiment 3: Open WebUI Image Generation
 

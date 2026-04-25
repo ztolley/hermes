@@ -92,8 +92,8 @@ services:
       HOST: 0.0.0.0
       PORT: ${QWEN_PORT:-3001}
       TENSOR_PARALLEL_SIZE: ${QWEN_TENSOR_PARALLEL_SIZE:-1}
-      GPU_MEMORY_UTIL: ${QWEN_GPU_MEMORY_UTILIZATION:-0.7}
-      MAX_MODEL_LEN: ${QWEN_MAX_MODEL_LEN:-131072}
+      GPU_MEMORY_UTIL: ${QWEN_GPU_MEMORY_UTIL_V2:-0.7}
+      MAX_MODEL_LEN: ${QWEN_MAX_MODEL_LEN_V2:-131072}
       MAX_NUM_SEQS: ${QWEN_MAX_NUM_SEQS:-2}
       VLLM_EXTRA_ARGS: >-
         --enable-prefix-caching
@@ -130,6 +130,55 @@ services:
     shm_size: 64gb
     healthcheck:
       test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${QWEN_PORT:-3001}/v1/models >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 100
+      start_period: 1200s
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+  qwen-vl:
+    profiles: ["vision"]
+    image: ${QWEN_VL_IMAGE:-avarok/dgx-vllm-nvfp4-kernel:v23}
+    container_name: vllm-qwen-vl
+    environment:
+      MODEL: ${QWEN_VL_MODEL:-Qwen/Qwen3-VL-8B-Instruct-FP8}
+      HOST: 0.0.0.0
+      PORT: ${QWEN_VL_PORT:-3003}
+      TENSOR_PARALLEL_SIZE: ${QWEN_VL_TENSOR_PARALLEL_SIZE:-1}
+      GPU_MEMORY_UTIL: ${QWEN_VL_GPU_MEMORY_UTIL_V2:-0.16}
+      MAX_MODEL_LEN: ${QWEN_VL_MAX_MODEL_LEN_V2:-32768}
+      MAX_NUM_SEQS: ${QWEN_VL_MAX_NUM_SEQS:-1}
+      VLLM_EXTRA_ARGS: >-
+        --trust-remote-code
+        --generation-config vllm
+        --max-parallel-loading-workers 1
+        --limit-mm-per-prompt.image ${QWEN_VL_IMAGE_LIMIT:-1}
+        --mm-processor-cache-gb ${QWEN_VL_MM_PROCESSOR_CACHE_GB:-1}
+        ${QWEN_VL_EXTRA_ARGS:-}
+      HF_HOME: /root/.cache/huggingface
+      HF_TOKEN: ${HF_TOKEN}
+      PYTHONUNBUFFERED: "1"
+      VLLM_WORKER_MULTIPROC_METHOD: spawn
+    volumes:
+      - ./data/qwen-vl/huggingface:/root/.cache/huggingface
+      - ./data/qwen-vl/vllm:/root/.cache/vllm
+      - ./data/qwen-vl/flashinfer:/root/.cache/flashinfer
+      - ./data/qwen-vl/triton:/root/.triton
+      - ./data/qwen-vl/tmp:/tmp
+    ports:
+      - "${QWEN_VL_PORT:-3003}:${QWEN_VL_PORT:-3003}"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    shm_size: 16gb
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:${QWEN_VL_PORT:-3003}/v1/models >/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 40

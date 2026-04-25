@@ -1,0 +1,47 @@
+Mon Apr 20 12:11:06 PM BST 2026
+NAME              IMAGE                                COMMAND                  SERVICE      CREATED          STATUS                    PORTS
+hermes-gateway    hermes-gateway:latest                "sh -lc 'mkdir -p /a…"   hermes       12 minutes ago   Up 7 minutes (healthy)    0.0.0.0:8000->8000/tcp, [::]:8000->8000/tcp
+open-webui        ghcr.io/open-webui/open-webui:main   "bash start.sh"          open-webui   12 minutes ago   Up 7 minutes (healthy)    0.0.0.0:3000->8080/tcp, [::]:3000->8080/tcp
+vllm-qwen-coder   avarok/dgx-vllm-nvfp4-kernel:v23     "/app/entrypoint.sh …"   qwen         12 minutes ago   Up 12 minutes (healthy)   6379/tcp, 0.0.0.0:3001->3001/tcp, [::]:3001->3001/tcp, 8888/tcp
+Mon Apr 20 12:11:20 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.142                Driver Version: 580.142        CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  NVIDIA GB10                    On  |   0000000F:01:00.0 Off |                  N/A |
+| N/A   41C    P0              9W /  N/A  | Not Supported          |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|    0   N/A  N/A            6430      G   /usr/lib/xorg/Xorg                       18MiB |
+|    0   N/A  N/A            6744      G   /usr/bin/gnome-shell                      6MiB |
+|    0   N/A  N/A          715342      C   VLLM::EngineCore                      77122MiB |
++-----------------------------------------------------------------------------------------+
+CONTAINER ID   NAME              CPU %     MEM USAGE / LIMIT     MEM %     NET I/O           BLOCK I/O         PIDS
+fd9066f37491   open-webui        0.16%     713.9MiB / 121.7GiB   0.57%     16.3kB / 2.06kB   279MB / 49.4MB    69
+94951bdc11c3   hermes-gateway    0.02%     123.3MiB / 121.7GiB   0.10%     62.2kB / 110kB    47.5MB / 1.62MB   5
+8bb4a1b52afb   vllm-qwen-coder   2.74%     3.949GiB / 121.7GiB   3.25%     218kB / 98.4kB    1.56GB / 215MB    159
+
+qwen-large
+----------
+runs: 10
+median_ttft_s: 0.073
+median_latency_s: 0.372
+median_completion_tokens: 19
+median_output_tok_s: 51.19
+
+hermes-gateway
+--------------
+runs: 1
+median_ttft_s: 2.867
+median_latency_s: 0.210
+median_completion_tokens: 3
+median_output_tok_s: 14.29
